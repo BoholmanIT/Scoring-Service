@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     redis_db: int = 0
     app_host: str = "0.0.0.0"
-    app_port: int = 8002
+    app_port: int = 8001
     
     class Config:
         env_file = ".env"
