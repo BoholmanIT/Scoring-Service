@@ -3,11 +3,11 @@ from contextlib import asynccontextmanager
 import json
 from typing import Dict
 
-from models import ScoringRequest, ScoringResponse
-from redis_client import redis_client
-from scoring import calculate_score
-from metrics import instrument_app
-from config import settings
+from app.models import ScoringRequest, ScoringResponse
+from app.redis_client import redis_client
+from app.scoring import calculate_score
+from app.metrics import instrument_app
+from app.config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

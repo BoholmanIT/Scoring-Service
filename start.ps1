@@ -1,33 +1,58 @@
-Write-Host "Запуск Scoring Service на Windows..." -ForegroundColor Green
+# Освободить порты
+$ports = 8001, 3000, 9090, 6379
+foreach ($port in $ports) {
+    Write-Host "Проверяем порт $port" -ForegroundColor Gray
+    $process = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | 
+               Select-Object -First 1 -ExpandProperty OwningProcess -ErrorAction SilentlyContinue
+    if ($process) {
+        Write-Host "Завершаем процесс $process на порту $port" -ForegroundColor Yellow
+        taskkill /PID $process /F 2>$null
+    }
+}
 
-# Проверка Docker
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-    Write-Host "Docker не установлен!" -ForegroundColor Red
+# Полностью перезапустить Docker
+Write-Host "Полный перезапуск Docker..." -ForegroundColor Green
+
+# Закрыть Docker Desktop
+Get-Process "Docker Desktop" -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Seconds 3
+
+# Остановить службы Docker
+Stop-Service -Name "com.docker.service" -Force -ErrorAction SilentlyContinue
+Stop-Service -Name "Docker Desktop Service" -Force -ErrorAction SilentlyContinue
+
+# Запустить Docker Desktop
+Write-Host "Запускаем Docker Desktop..." -ForegroundColor Green
+Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+
+# Ждем и проверяем запуск
+$maxAttempts = 10
+$attempt = 0
+$dockerReady = $false
+
+while ($attempt -lt $maxAttempts -and -not $dockerReady) {
+    $attempt++
+    Write-Host "Попытка $attempt/$maxAttempts проверяем Docker..." -ForegroundColor Gray
+    
+    try {
+        docker version 2>$null | Out-Null
+        $dockerReady = $true
+        Write-Host "✓ Docker запущен" -ForegroundColor Green
+    } catch {
+        Write-Host "✗ Docker еще не готов, ждем..." -ForegroundColor Yellow
+        Start-Sleep -Seconds 5
+    }
+}
+
+if (-not $dockerReady) {
+    Write-Host "Не удалось запустить Docker!" -ForegroundColor Red
     exit 1
 }
 
-# Проверка Docker Compose
-if (-not (Get-Command docker-compose -ErrorAction SilentlyContinue)) {
-    Write-Host "Docker Compose не установлен!" -ForegroundColor Red
-    exit 1
-}
-
-# Остановка предыдущих контейнеров
-Write-Host "Останавливаем предыдущие контейнеры..." -ForegroundColor Yellow
+# Запустить проект
+Write-Host "Запускаем проект..." -ForegroundColor Green
 docker-compose down
-
-# Сборка и запуск
-Write-Host "Собираем и запускаем контейнеры..." -ForegroundColor Yellow
 docker-compose up --build -d
 
-# Ожидание запуска
-Write-Host "Ожидаем запуск сервисов (30 секунд)..." -ForegroundColor Yellow
-Start-Sleep -Seconds 30
-
-# Проверка сервисов
-Write-Host "`nПроверка сервисов:" -ForegroundColor Green
-Write-Host "1. FastAPI: http://localhost:8000/docs"
-Write-Host "2. Grafana: http://localhost:3000 (admin/admin)"
-Write-Host "3. Prometheus: http://localhost:9090"
-Write-Host "4. Health-check: http://localhost:8000/health"
-Write-Host "`nДля просмотра логов выполните: docker-compose logs -f" -ForegroundColor Cyan
+Write-Host "`nГотово! Проверьте:" -ForegroundColor Cyan
+Write-Host "http://localhost:8000/health" -ForegroundColor Yellow
