@@ -1,5 +1,5 @@
 from typing import List
-from .models import Loan
+from models import Loan
 
 def calculate_score(income_amount: float, loans_history: List[Loan]) -> float:
     """
