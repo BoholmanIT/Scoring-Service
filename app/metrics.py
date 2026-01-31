@@ -1,8 +1,10 @@
-from prometheus_fastapi_instrumentator import Instrumentator
-from prometheus_client import Counter, Histogram, Gauge
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from fastapi import Request, Response
+from fastapi.routing import APIRoute
 import time
+from typing import Callable
 
-# Создаем кастомные метрики
+# Создаем метрики
 REQUEST_COUNT = Counter(
     'scoring_service_requests_total',
     'Total number of requests',
@@ -22,36 +24,53 @@ SCORING_RESULTS = Counter(
     ['result_range']
 )
 
+class PrometheusMiddleware:
+    """Middleware для сбора метрик"""
+    
+    def __init__(self, app):
+        self.app = app
+    
+    async def __call__(self, scope, receive, send):
+        if scope['type'] != 'http':
+            await self.app(scope, receive, send)
+            return
+        
+        start_time = time.time()
+        
+        # Перехват запроса для сбора метрик
+        async def send_wrapper(response):
+            if response['type'] == 'http.response.start':
+                # Регистрируем метрики
+                method = scope['method']
+                endpoint = scope['path']
+                status = response['status']
+                
+                REQUEST_COUNT.labels(
+                    method=method,
+                    endpoint=endpoint,
+                    status=status
+                ).inc()
+                
+                REQUEST_LATENCY.labels(
+                    method=method,
+                    endpoint=endpoint,
+                    status=status
+                ).observe(time.time() - start_time)
+            
+            await send(response)
+        
+        await self.app(scope, receive, send_wrapper)
+
 def instrument_app(app):
     """Инструментирование приложения метриками Prometheus"""
     
-    # Базовый инструментатор
-    instrumentator = Instrumentator(
-        should_group_status_codes=False,
-        excluded_handlers=["/metrics", "/health"],
-    )
+    # Добавляем middleware
+    app.add_middleware(PrometheusMiddleware)
     
-    # Добавляем кастомные метрики
-    @app.middleware("http")
-    async def add_metrics(request, call_next):
-        start_time = time.time()
-        
-        # Продолжаем обработку запроса
-        response = await call_next(request)
-        
-        # Регистрируем метрики
-        REQUEST_COUNT.labels(
-            method=request.method,
-            endpoint=request.url.path,
-            status=response.status_code
-        ).inc()
-        
-        REQUEST_LATENCY.labels(
-            method=request.method,
-            endpoint=request.url.path,
-            status=response.status_code
-        ).observe(time.time() - start_time)
-        
-        return response
-    
-    instrumentator.instrument(app).expose(app)
+    # Добавляем эндпоинт для метрик
+    @app.get("/metrics")
+    async def metrics():
+        return Response(
+            content=generate_latest(),
+            media_type=CONTENT_TYPE_LATEST
+        )
