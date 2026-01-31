@@ -62,7 +62,7 @@ async def scoring_endpoint(request: ScoringRequest):
         redis_client.cache_result(cache_key, result)
         
         # Регистрируем результат для метрик
-        from .metrics import SCORING_RESULTS
+        from app.metrics import SCORING_RESULTS
         if result == 0:
             SCORING_RESULTS.labels(result_range="0").inc()
         elif result == 10000:
